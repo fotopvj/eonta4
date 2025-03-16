@@ -1,0 +1,33 @@
+services:
+  - type: web
+    name: eonta
+    env: node
+    buildCommand: npm install && apt-get update && apt-get install -y ffmpeg
+    startCommand: npm start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 3000
+      - key: MONGODB_URI
+        sync: false
+      - key: AWS_ACCESS_KEY_ID
+        sync: false
+      - key: AWS_SECRET_ACCESS_KEY
+        sync: false
+      - key: AWS_REGION
+        value: us-east-1
+      - key: S3_BUCKET_NAME
+        sync: false
+      - key: JWT_SECRET
+        generateValue: true
+      - key: JWT_EXPIRATION
+        value: 7d
+      - key: CORS_ALLOWED_ORIGINS
+        value: https://eonta.onrender.com
+      - key: SESSION_SECRET
+        generateValue: true
+      - key: MAX_AUDIO_FILE_SIZE_MB
+        value: 30
+      - key: ALLOWED_AUDIO_FORMATS
+        value: wav,mp3,m4a,ogg,aac,flac

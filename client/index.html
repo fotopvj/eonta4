@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>EONTA - GPS-Based Audio Platform</title>
+  <link rel="stylesheet" href="assets/css/main.css">
+</head>
+<body>
+  <nav class="navbar">
+    <div class="navbar-brand">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 500 150" width="120" height="36">
+        <!-- Background Sound Waves -->
+        <path d="M45,75 C60,45 75,105 90,75 C105,45 120,105 135,75" fill="none" stroke="#7EB3F1" stroke-width="4" stroke-linecap="round" opacity="0.5"/>
+        <path d="M30,75 C50,30 70,120 90,75 C110,30 130,120 150,75" fill="none" stroke="#5B48D9" stroke-width="5" stroke-linecap="round" opacity="0.4"/>
+        <path d="M20,75 C45,20 70,130 95,75 C120,20 145,130 170,75" fill="none" stroke="#4A90E2" stroke-width="6" stroke-linecap="round" opacity="0.3"/>
+        
+        <!-- Location Pin with Sound Wave -->
+        <circle cx="200" cy="75" r="25" fill="#4A90E2"/>
+        <path d="M200,50 L200,100" stroke="white" stroke-width="3" stroke-linecap="round"/>
+        <circle cx="200" cy="60" r="4" fill="white"/>
+        
+        <!-- Sound Waves from Pin -->
+        <path d="M215,75 C225,65 235,85 245,75" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round"/>
+        <path d="M220,75 C235,55 250,95 265,75" fill="none" stroke="white" stroke-width="2" stroke-linecap="round"/>
+        <path d="M225,75 C245,45 265,105 285,75" fill="none" stroke="white" stroke-width="1.5" stroke-linecap="round"/>
+        
+        <!-- Text "EONTA" -->
+        <text x="300" y="95" font-family="Arial, sans-serif" font-size="55" font-weight="bold" fill="#4A90E2">EONTA</text>
+      </svg>
+    </div>
+    <ul class="navbar-nav">
+      <li><a href="#">Home</a></li>
+      <li><a href="#">Compositions</a></li>
+      <li><a href="#">Settings</a></li>
+    </ul>
+  </nav>
+
+  <div id="map-container">
+    <!-- Map will be loaded here by Google Maps API -->
+    <p style="text-align: center; padding-top: 40vh; color: #666;">
+      Loading map... Please ensure your Google Maps API key is configured correctly.
+    </p>
+  </div>
+
+  <div class="path-recorder-control">
+    <button class="record-btn">
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="12" r="6"></circle>
+      </svg>
+    </button>
+  </div>
+
+  <script src="src/app.js"></script>
+  <!-- Google Maps API -->
+  <script async defer src="https://maps.googleapis.com/maps/api/js?key=YOUR_API_KEY&callback=initMap"></script>
+</body>
+</html>
