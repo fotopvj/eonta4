@@ -11,63 +11,71 @@ class MobileOptimizer {
       this.audioService = audioService;
       this.mapService = mapService;
       
-      this.batteryLevel = null;
+      this.batteryLevel = 1.0;
       this.isLowPowerMode = false;
       this.isBackgroundState = false;
       this.originalSettings = null;
       this.batteryManager = null;
       
-      // Initialize
-      this.init();
+      // Store original settings immediately
+      if (this.pathRecorderService && this.pathRecorderService.settings) {
+        this.originalSettings = { ...this.pathRecorderService.settings };
+      }
     }
     
     /**
      * Initialize mobile optimizations
      */
     async init() {
-      // Store original settings for restoration
-      if (this.pathRecorderService && this.pathRecorderService.settings) {
-        this.originalSettings = { ...this.pathRecorderService.settings };
+      try {
+        // Set up battery monitoring
+        await this.setupBatteryMonitoring();
+        
+        // Set up background state detection
+        this.setupBackgroundDetection();
+        
+        // Set up device orientation change handler
+        this.setupOrientationHandler();
+        
+        // Apply initial optimizations based on device capabilities
+        await this.applyInitialOptimizations();
+      } catch (error) {
+        console.warn('Error during initialization:', error);
       }
-      
-      // Set up battery monitoring
-      await this.setupBatteryMonitoring();
-      
-      // Set up background state detection
-      this.setupBackgroundDetection();
-      
-      // Set up device orientation change handler
-      this.setupOrientationHandler();
-      
-      // Apply initial optimizations based on device capabilities
-      this.applyInitialOptimizations();
     }
     
     /**
      * Set up battery monitoring
      */
     async setupBatteryMonitoring() {
+      if (typeof navigator === 'undefined') return;
+      
       if ('getBattery' in navigator) {
         try {
           this.batteryManager = await navigator.getBattery();
+          
+          if (!this.batteryManager) {
+            console.warn('Battery API returned null manager');
+            return;
+          }
           
           // Get initial battery level
           this.batteryLevel = this.batteryManager.level;
           
           // Set up event listeners
-          this.batteryManager.addEventListener('levelchange', () => {
+          this.batteryManager.addEventListener('levelchange', async () => {
             this.batteryLevel = this.batteryManager.level;
-            this.applyBatteryOptimizations();
+            await this.applyBatteryOptimizations();
           });
           
-          this.batteryManager.addEventListener('chargingchange', () => {
-            this.applyBatteryOptimizations();
+          this.batteryManager.addEventListener('chargingchange', async () => {
+            await this.applyBatteryOptimizations();
           });
           
           // Apply initial battery optimizations
-          this.applyBatteryOptimizations();
+          await this.applyBatteryOptimizations();
         } catch (error) {
-          console.warn('Battery API not available:', error);
+          console.warn('Battery API error:', error);
         }
       } else {
         console.log('Battery API not supported in this browser');
@@ -77,7 +85,7 @@ class MobileOptimizer {
     /**
      * Apply optimizations based on battery level
      */
-    applyBatteryOptimizations() {
+    async applyBatteryOptimizations() {
       if (!this.batteryManager || !this.pathRecorderService) return;
       
       const isCharging = this.batteryManager.charging;
@@ -86,7 +94,7 @@ class MobileOptimizer {
       // If charging, use original settings
       if (isCharging) {
         this.isLowPowerMode = false;
-        this.restoreOriginalSettings();
+        await this.restoreOriginalSettings();
         return;
       }
       
@@ -105,7 +113,7 @@ class MobileOptimizer {
         // Reduce audio quality if needed
         if (this.audioService && !this.isBackgroundState) {
           // Only apply if app is in foreground
-          this.reduceAudioQuality(true);
+          await this.reduceAudioQuality(true);
         }
       } 
       else if (level <= 0.3) {
@@ -121,13 +129,13 @@ class MobileOptimizer {
         
         // Slight audio quality reduction
         if (this.audioService && !this.isBackgroundState) {
-          this.reduceAudioQuality(false);
+          await this.reduceAudioQuality(false);
         }
       } 
       else {
         // Normal battery level
         this.isLowPowerMode = false;
-        this.restoreOriginalSettings();
+        await this.restoreOriginalSettings();
       }
       
       // Update geolocation options
@@ -159,9 +167,11 @@ class MobileOptimizer {
       });
       
       // Handle page unload
-      window.addEventListener('beforeunload', () => {
-        this.handleAppClose();
-      });
+      if (typeof window !== 'undefined') {
+        window.addEventListener('beforeunload', () => {
+          this.handleAppClose();
+        });
+      }
     }
     
     /**
@@ -219,12 +229,16 @@ class MobileOptimizer {
      * Handle app close/unload
      */
     handleAppClose() {
-      // Save any local data if needed
-      
-      // Stop all active processes
+      // Save recording state if needed
       if (this.pathRecorderService && this.pathRecorderService.isRecording) {
         // Save current recording state to be restored later
-        // (This would require implementing state persistence)
+        try {
+          if (typeof window !== 'undefined' && window.localStorage) {
+            window.localStorage.setItem('eonta_recording_in_progress', 'true');
+          }
+        } catch (error) {
+          console.warn('Error saving to localStorage:', error);
+        }
       }
       
       // Stop audio immediately
@@ -236,7 +250,7 @@ class MobileOptimizer {
     /**
      * Apply initial optimizations based on device capabilities
      */
-    applyInitialOptimizations() {
+    async applyInitialOptimizations() {
       // Detect device capabilities
       const isLowEndDevice = this.detectLowEndDevice();
       
@@ -248,13 +262,13 @@ class MobileOptimizer {
         }
         
         // Simplify map rendering
-        if (this.mapService) {
-          // Reduce map detail level
-          if (this.mapService.setMapQuality) {
-            this.mapService.setMapQuality('low');
-          }
+        if (this.mapService && this.mapService.setMapQuality) {
+          this.mapService.setMapQuality('low');
         }
       }
+      
+      // Apply initial battery optimizations
+      await this.applyBatteryOptimizations();
     }
     
     /**
@@ -284,16 +298,20 @@ class MobileOptimizer {
      * @returns {Boolean} True if device is low-end
      */
     detectLowEndDevice() {
+      if (typeof navigator === 'undefined') return false;
+      
       // Basic hardware detection
-      const isLowRAM = navigator.deviceMemory && navigator.deviceMemory < 4;
-      const isSlowCPU = navigator.hardwareConcurrency && navigator.hardwareConcurrency < 4;
+      const isLowRAM = navigator.deviceMemory ? navigator.deviceMemory < 4 : false;
+      const isSlowCPU = navigator.hardwareConcurrency ? navigator.hardwareConcurrency < 4 : false;
       
       // Check for low-end connection
-      const isSlowConnection = navigator.connection && 
-                            (navigator.connection.type === 'cellular' || 
-                             navigator.connection.effectiveType === 'slow-2g' ||
-                             navigator.connection.effectiveType === '2g' ||
-                             navigator.connection.downlink < 1);
+      const connection = navigator.connection;
+      const isSlowConnection = connection ? (
+        connection.type === 'cellular' || 
+        connection.effectiveType === 'slow-2g' ||
+        connection.effectiveType === '2g' ||
+        (typeof connection.downlink === 'number' && connection.downlink < 1)
+      ) : false;
                              
       return isLowRAM || isSlowCPU || isSlowConnection;
     }
@@ -302,7 +320,7 @@ class MobileOptimizer {
      * Reduce audio quality to save battery
      * @param {Boolean} aggressive - Whether to apply aggressive reduction
      */
-    reduceAudioQuality(aggressive) {
+    async reduceAudioQuality(aggressive) {
       if (!this.audioService) return;
       
       // Apply a master lowpass filter to reduce high-frequency content
@@ -329,7 +347,7 @@ class MobileOptimizer {
     /**
      * Restore original settings
      */
-    restoreOriginalSettings() {
+    async restoreOriginalSettings() {
       if (!this.originalSettings) return;
       
       // Restore path recorder settings
@@ -356,6 +374,6 @@ class MobileOptimizer {
         }
       }
     }
-  }
-  
-  export default MobileOptimizer;
+}
+
+export default MobileOptimizer;

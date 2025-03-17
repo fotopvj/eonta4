@@ -15,7 +15,7 @@ const DEFAULT_SAMPLE_RATE = 44100; // Default sample rate if not specified
  */
 export function createAudioContext() {
   try {
-    // Check if Web Audio API is supported
+    // Check for Web Audio API support
     if (typeof window === 'undefined' || 
         (!window.AudioContext && !window.webkitAudioContext)) {
       console.error('Web Audio API is not supported in this browser');
@@ -24,31 +24,42 @@ export function createAudioContext() {
     
     const AudioContextClass = window.AudioContext || window.webkitAudioContext;
     const context = new AudioContextClass({
-      latencyHint: 'interactive', // Optimize for interactive applications
+      latencyHint: 'interactive',
       sampleRate: DEFAULT_SAMPLE_RATE
     });
     
+    // Initialize active nodes tracking
+    context._activeNodes = [];
+    
     // Handle suspended state (autoplay policy)
-    if (context.state === 'suspended') {
-      const resumeOnInteraction = () => {
-        if (context.state === 'suspended') {
-          context.resume().catch(err => {
-            console.error('Error resuming audio context:', err);
-          });
+    const resumeContext = async () => {
+      if (context.state === 'suspended') {
+        try {
+          await context.resume();
+          
+          // Remove listeners if context is running
+          if (context.state === 'running') {
+            ['touchstart', 'touchend', 'mousedown', 'mouseup', 'keydown']
+              .forEach(event => document.removeEventListener(event, resumeContext));
+          }
+        } catch (error) {
+          console.error('Error resuming audio context:', error);
         }
-        
-        // Remove listeners after successful resume
-        if (context.state === 'running') {
-          ['touchend', 'mouseup', 'keydown'].forEach(eventType => {
-            document.removeEventListener(eventType, resumeOnInteraction);
-          });
-        }
-      };
-      
-      ['touchend', 'mouseup', 'keydown'].forEach(eventType => {
-        document.addEventListener(eventType, resumeOnInteraction);
-      });
-    }
+      }
+    };
+    
+    // Add more event listeners for mobile
+    ['touchstart', 'touchend', 'mousedown', 'mouseup', 'keydown']
+      .forEach(event => document.addEventListener(event, resumeContext));
+    
+    // Handle page visibility changes
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden && context.state === 'running') {
+        context.suspend().catch(console.error);
+      } else if (!document.hidden && context.state === 'suspended') {
+        context.resume().catch(console.error);
+      }
+    });
     
     return context;
   } catch (error) {
@@ -631,6 +642,50 @@ export async function checkAudioPlaybackAllowed(audioContext) {
   }
 }
 
+/**
+ * Cleanup audio context and resources
+ * @param {AudioContext} context - Web Audio API context to cleanup
+ * @returns {Promise<void>}
+ */
+export async function cleanupAudioContext(context) {
+  if (!context) return;
+  
+  try {
+    // Close any active audio nodes
+    const activeNodes = context._activeNodes || [];
+    for (const node of activeNodes) {
+      if (node && typeof node.disconnect === 'function') {
+        node.disconnect();
+      }
+    }
+    
+    // Close the context if it's not already closed
+    if (context.state !== 'closed') {
+      await context.close();
+    }
+    
+    // Clear the active nodes array
+    context._activeNodes = [];
+  } catch (error) {
+    console.error('Error cleaning up audio context:', error);
+  }
+}
+
+/**
+ * Track active audio nodes for cleanup
+ * @param {AudioContext} context - Web Audio API context
+ * @param {AudioNode} node - Audio node to track
+ */
+export function trackAudioNode(context, node) {
+  if (!context || !node) return;
+  
+  if (!context._activeNodes) {
+    context._activeNodes = [];
+  }
+  
+  context._activeNodes.push(node);
+}
+
 // Export all functions as a default object
 export default {
   createAudioContext,
@@ -650,5 +705,7 @@ export default {
   formatTime,
   checkAudioSupport,
   loadAudioFromBlob,
-  checkAudioPlaybackAllowed
+  checkAudioPlaybackAllowed,
+  cleanupAudioContext,
+  trackAudioNode
 };

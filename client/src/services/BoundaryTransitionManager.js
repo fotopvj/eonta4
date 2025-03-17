@@ -215,54 +215,129 @@ class BoundaryTransitionManager {
   }
   
   /**
+   * Validate position data
+   * @param {Object} position - Position object with lat/lng
+   * @returns {boolean} - Whether position is valid
+   */
+  validatePosition(position) {
+    if (!position || typeof position !== 'object') return false;
+    
+    const { lat, lng } = position;
+    
+    // Check if lat/lng are valid numbers
+    if (typeof lat !== 'number' || typeof lng !== 'number') return false;
+    
+    // Check if lat/lng are within valid ranges
+    if (lat < -90 || lat > 90 || lng < -180 || lng > 180) return false;
+    
+    return true;
+  }
+  
+  /**
+   * Get current position with fallback options
+   * @returns {Promise<Object>} - Position object or null
+   */
+  async getCurrentPosition() {
+    try {
+      // Try HTML5 Geolocation
+      if ('geolocation' in navigator) {
+        try {
+          const pos = await new Promise((resolve, reject) => {
+            navigator.geolocation.getCurrentPosition(resolve, reject, {
+              enableHighAccuracy: true,
+              timeout: 10000,
+              maximumAge: 0
+            });
+          });
+          
+          return {
+            lat: pos.coords.latitude,
+            lng: pos.coords.longitude,
+            accuracy: pos.coords.accuracy
+          };
+        } catch (error) {
+          // If geolocation fails, fall back to IP-based geolocation
+          console.error('Error getting position:', error);
+        }
+      }
+      
+      // Fallback to IP-based geolocation
+      const response = await fetch('https://ipapi.co/json/');
+      if (!response.ok) {
+        throw new Error('IP geolocation request failed');
+      }
+      
+      const data = await response.json();
+      
+      return {
+        lat: parseFloat(data.latitude),
+        lng: parseFloat(data.longitude),
+        accuracy: 5000 // Assume 5km accuracy for IP-based location
+      };
+    } catch (error) {
+      console.error('Error getting position:', error);
+      return null;
+    }
+  }
+  
+  /**
+   * Handle equal distance case in crossfades
+   * @param {Array} regions - Active regions
+   * @returns {Object} - Volume levels for each region
+   */
+  handleEqualDistances(regions) {
+    if (!regions || regions.length === 0) return {};
+    
+    const volumePerRegion = 1 / regions.length;
+    return regions.reduce((acc, region) => {
+      acc[region.id] = volumePerRegion;
+      return acc;
+    }, {});
+  }
+  
+  /**
    * Handle crossfade between multiple regions
    * Implements the overlapping regions functionality described in thesis section 3.2.0
    * @param {Array} activeRegions - Currently active audio regions
    * @param {Object} position - Current user position
    */
   handleCrossfades(activeRegions, position) {
-    if (!activeRegions || activeRegions.length <= 1 || !position) {
+    if (!activeRegions || !Array.isArray(activeRegions)) return {};
+    if (activeRegions.length <= 1) return {};
+    
+    // Validate position
+    if (!this.validatePosition(position)) {
+      console.error('Invalid position data');
       return;
     }
     
     try {
-      // For each pair of active regions, calculate crossfade settings
-      for (let i = 0; i < activeRegions.length; i++) {
-        for (let j = i + 1; j < activeRegions.length; j++) {
-          const region1 = activeRegions[i];
-          const region2 = activeRegions[j];
-          
-          // Skip if either region doesn't have crossfade enabled
-          if (!region1.settings?.crossfadeOverlap || !region2.settings?.crossfadeOverlap) {
-            continue;
-          }
-          
-          // Calculate distances to both region centers
-          const distance1 = this.calculateDistance(position, region1.center);
-          const distance2 = this.calculateDistance(position, region2.center);
-          
-          // Calculate crossfade ratio based on relative distances
-          const totalDistance = distance1 + distance2;
-          if (totalDistance === 0) continue;
-          
-          const ratio1 = 1 - (distance1 / totalDistance);
-          const ratio2 = 1 - (distance2 / totalDistance);
-          
-          // Apply volume adjustments for crossfade
-          // This creates an inverse relationship - as you move toward one region,
-          // its volume increases while the other decreases proportionally
-          const baseVolume1 = region1.settings?.volume || 1.0;
-          const baseVolume2 = region2.settings?.volume || 1.0;
-          
-          const crossfadeVolume1 = baseVolume1 * (0.7 + 0.3 * ratio1);
-          const crossfadeVolume2 = baseVolume2 * (0.7 + 0.3 * ratio2);
-          
-          this.audioService.setVolume(region1.id, crossfadeVolume1);
-          this.audioService.setVolume(region2.id, crossfadeVolume2);
-        }
+      const volumes = {};
+      const distances = {};
+      
+      // Calculate distances for all regions
+      activeRegions.forEach(region => {
+        distances[region.id] = this.calculateDistance(position, region.center);
+      });
+      
+      // Check if all distances are equal
+      const uniqueDistances = new Set(Object.values(distances));
+      if (uniqueDistances.size === 1) {
+        return this.handleEqualDistances(activeRegions);
       }
+      
+      // Calculate volume ratios based on inverse distances
+      const totalInverseDistance = Object.values(distances).reduce((sum, d) => sum + (1 / d), 0);
+      
+      activeRegions.forEach(region => {
+        const distance = distances[region.id];
+        volumes[region.id] = (1 / distance) / totalInverseDistance;
+      });
+      
+      return volumes;
     } catch (error) {
-      console.error('Error handling crossfades:', error);
+      console.error('Error in crossfade calculation:', error);
+      return {};
     }
   }
   

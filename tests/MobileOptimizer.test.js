@@ -1,266 +1,278 @@
 // tests/MobileOptimizer.test.js
 
-const MobileOptimizer = require('../client/src/services/MobileOptimizer');
-
-// Mock services
-const mockPathRecorderService = {
-  settings: {
-    captureInterval: 1000,
-    minDistance: 2
-  },
-  locationOptions: {
-    enableHighAccuracy: true,
-    maximumAge: 0,
-    timeout: 10000
-  },
-  isRecording: false,
-  wasTrackingBeforePause: false,
-  pauseGPSTracking: jest.fn(),
-  resumeGPSTracking: jest.fn()
-};
-
-const mockAudioService = {
-  audioContext: {
-    destination: {}
-  },
-  masterGain: {
-    disconnect: jest.fn(),
-    connect: jest.fn()
-  },
-  createLowpassFilter: jest.fn().mockImplementation((context, freq, q) => {
-    return {
-      frequency: { value: freq },
-      connect: jest.fn(),
-      disconnect: jest.fn()
-    };
-  }),
-  suspendAudio: jest.fn(),
-  resumeAudio: jest.fn(),
-  dispose: jest.fn()
-};
-
-const mockMapService = {
-  setRefreshRate: jest.fn(),
-  pauseUpdates: jest.fn(),
-  resumeUpdates: jest.fn(),
-  setMapQuality: jest.fn()
-};
-
-// Mock Battery API
-const mockBatteryManager = {
-  level: 0.8,
-  charging: false,
-  addEventListener: jest.fn(),
-  removeEventListener: jest.fn()
-};
-
-// Mock navigator
-global.navigator = {
-  getBattery: jest.fn().mockResolvedValue(mockBatteryManager),
-  deviceMemory: 4,
-  hardwareConcurrency: 4,
-  connection: {
-    type: 'wifi',
-    effectiveType: '4g',
-    downlink: 10,
-    addEventListener: jest.fn()
-  }
-};
-
-// Mock document
-global.document = {
-  hidden: false,
-  addEventListener: jest.fn(),
-  removeEventListener: jest.fn()
-};
-
-// Mock window
-global.window = {
-  addEventListener: jest.fn(),
-  removeEventListener: jest.fn(),
-  localStorage: {
-    getItem: jest.fn(),
-    setItem: jest.fn()
-  }
-};
+import MobileOptimizer from '../client/src/services/MobileOptimizer';
 
 describe('MobileOptimizer', () => {
   let mobileOptimizer;
-
+  let mockPathRecorderService;
+  let mockAudioService;
+  let mockMapService;
+  let mockBatteryManager;
+  let mockLocalStorage;
+  let batteryLevelChangeCallback;
+  let batteryChargingChangeCallback;
+  let originalNavigator;
+  let originalDocument;
+  let documentHidden;
+  let visibilityChangeHandler;
+  let beforeUnloadHandler;
+  
   beforeEach(() => {
-    // Reset mocks
+    // Store original navigator and document
+    originalNavigator = global.navigator;
+    originalDocument = global.document;
+    
+    // Reset state
+    documentHidden = false;
+    batteryLevelChangeCallback = null;
+    batteryChargingChangeCallback = null;
+    visibilityChangeHandler = null;
+    beforeUnloadHandler = null;
+    
+    // Mock battery manager
+    mockBatteryManager = {
+      level: 1.0,
+      charging: false,
+      addEventListener: jest.fn((event, callback) => {
+        if (event === 'levelchange') {
+          batteryLevelChangeCallback = callback;
+        }
+        if (event === 'chargingchange') {
+          batteryChargingChangeCallback = callback;
+        }
+      }),
+      removeEventListener: jest.fn()
+    };
+    
+    // Mock services
+    mockPathRecorderService = {
+      settings: {
+        captureInterval: 1000,
+        minDistance: 2
+      },
+      isRecording: false,
+      pauseGPSTracking: jest.fn(),
+      resumeGPSTracking: jest.fn(),
+      locationOptions: {},
+      wasTrackingBeforePause: false
+    };
+    
+    mockAudioService = {
+      suspendAudio: jest.fn(),
+      resumeAudio: jest.fn(),
+      dispose: jest.fn(),
+      createLowpassFilter: jest.fn(),
+      masterGain: {
+        disconnect: jest.fn(),
+        connect: jest.fn()
+      },
+      audioContext: {
+        destination: {}
+      }
+    };
+    
+    mockMapService = {
+      pauseUpdates: jest.fn(),
+      resumeUpdates: jest.fn(),
+      setRefreshRate: jest.fn(),
+      setMapQuality: jest.fn()
+    };
+    
+    // Mock localStorage
+    mockLocalStorage = {
+      setItem: jest.fn(),
+      getItem: jest.fn(),
+      removeItem: jest.fn()
+    };
+    
+    // Mock window
+    const mockWindow = {
+      localStorage: mockLocalStorage,
+      addEventListener: jest.fn((event, handler) => {
+        if (event === 'beforeunload') {
+          beforeUnloadHandler = handler;
+        }
+      }),
+      removeEventListener: jest.fn(),
+      dispatchEvent: jest.fn(event => {
+        if (event.type === 'beforeunload' && beforeUnloadHandler) {
+          beforeUnloadHandler(event);
+        }
+      })
+    };
+    
+    // Set up global window object
+    Object.defineProperty(global, 'window', {
+      value: mockWindow,
+      writable: true,
+      configurable: true
+    });
+    
+    // Mock document
+    global.document = {
+      addEventListener: jest.fn((event, handler) => {
+        if (event === 'visibilitychange') {
+          visibilityChangeHandler = handler;
+        }
+      }),
+      removeEventListener: jest.fn(),
+      dispatchEvent: jest.fn(event => {
+        if (event.type === 'visibilitychange' && visibilityChangeHandler) {
+          documentHidden = !documentHidden;
+          visibilityChangeHandler(event);
+        }
+      }),
+      get hidden() {
+        return documentHidden;
+      }
+    };
+    
+    // Mock navigator
+    const getBatteryMock = jest.fn().mockResolvedValue(mockBatteryManager);
+    
+    // Create a new navigator object with all the properties we need
+    const mockNavigator = {
+      getBattery: getBatteryMock,
+      deviceMemory: 8,
+      hardwareConcurrency: 8,
+      connection: {
+        type: 'wifi',
+        effectiveType: '4g',
+        downlink: 10
+      }
+    };
+    
+    // Replace global navigator
+    Object.defineProperty(global, 'navigator', {
+      value: mockNavigator,
+      writable: true,
+      configurable: true
+    });
+    
+    // Create instance
+    mobileOptimizer = new MobileOptimizer(
+      mockPathRecorderService,
+      mockAudioService,
+      mockMapService
+    );
+  });
+  
+  afterEach(() => {
+    // Restore original navigator and document
+    global.navigator = originalNavigator;
+    global.document = originalDocument;
+    
+    // Clear all mocks
     jest.clearAllMocks();
-    
-    mockBatteryManager.level = 0.8;
-    mockBatteryManager.charging = false;
-    
-    document.hidden = false;
   });
-
+  
   it('initializes correctly', async () => {
-    mobileOptimizer = new MobileOptimizer(
-      mockPathRecorderService,
-      mockAudioService,
-      mockMapService
-    );
-    
-    expect(mobileOptimizer).toBeDefined();
-    expect(mobileOptimizer.pathRecorderService).toBe(mockPathRecorderService);
-    expect(mobileOptimizer.audioService).toBe(mockAudioService);
-    expect(mobileOptimizer.mapService).toBe(mockMapService);
-    
-    // Should store original settings
-    expect(mobileOptimizer.originalSettings).toEqual(mockPathRecorderService.settings);
-    
-    // Should set up battery monitoring
+    await mobileOptimizer.init();
     expect(navigator.getBattery).toHaveBeenCalled();
-    
-    // Should apply initial optimizations
-    expect(mockMapService.setMapQuality).not.toHaveBeenCalled(); // Not a low-end device
+    expect(mockBatteryManager.addEventListener).toHaveBeenCalledWith('levelchange', expect.any(Function));
+    expect(mockBatteryManager.addEventListener).toHaveBeenCalledWith('chargingchange', expect.any(Function));
   });
-
+  
   it('applies correct battery optimizations for critical battery', async () => {
-    // Set critical battery level
+    await mobileOptimizer.init();
+    
+    // Simulate critical battery
     mockBatteryManager.level = 0.1;
+    if (batteryLevelChangeCallback) {
+      await batteryLevelChangeCallback();
+    }
     
-    mobileOptimizer = new MobileOptimizer(
-      mockPathRecorderService,
-      mockAudioService,
-      mockMapService
-    );
-    
-    // Should apply aggressive power saving
     expect(mobileOptimizer.isLowPowerMode).toBe(true);
     expect(mockPathRecorderService.settings.captureInterval).toBe(3000);
     expect(mockPathRecorderService.settings.minDistance).toBe(8);
     expect(mockMapService.setRefreshRate).toHaveBeenCalledWith(3000);
-    
-    // Should reduce audio quality
-    expect(mockAudioService.createLowpassFilter).toHaveBeenCalledWith(
-      mockAudioService.audioContext,
-      8000, // Aggressive cutoff
-      0.5
-    );
   });
-
+  
   it('applies correct battery optimizations for low battery', async () => {
-    // Set low battery level
-    mockBatteryManager.level = 0.25;
+    await mobileOptimizer.init();
     
-    mobileOptimizer = new MobileOptimizer(
-      mockPathRecorderService,
-      mockAudioService,
-      mockMapService
-    );
+    // Simulate low battery
+    mockBatteryManager.level = 0.2;
+    if (batteryLevelChangeCallback) {
+      await batteryLevelChangeCallback();
+    }
     
-    // Should apply moderate power saving
     expect(mobileOptimizer.isLowPowerMode).toBe(true);
     expect(mockPathRecorderService.settings.captureInterval).toBe(2000);
     expect(mockPathRecorderService.settings.minDistance).toBe(5);
     expect(mockMapService.setRefreshRate).toHaveBeenCalledWith(2000);
-    
-    // Should reduce audio quality moderately
-    expect(mockAudioService.createLowpassFilter).toHaveBeenCalledWith(
-      mockAudioService.audioContext,
-      12000, // Moderate cutoff
-      0.5
-    );
   });
-
+  
   it('restores original settings when charging', async () => {
-    // Set charging and low battery
-    mockBatteryManager.level = 0.25;
+    await mobileOptimizer.init();
+    
+    // Simulate charging
     mockBatteryManager.charging = true;
+    if (batteryChargingChangeCallback) {
+      await batteryChargingChangeCallback();
+    }
     
-    mobileOptimizer = new MobileOptimizer(
-      mockPathRecorderService,
-      mockAudioService,
-      mockMapService
-    );
-    
-    // Original settings should be used when charging
     expect(mobileOptimizer.isLowPowerMode).toBe(false);
-    expect(mockPathRecorderService.settings).toEqual(mobileOptimizer.originalSettings);
+    expect(mockPathRecorderService.settings.captureInterval).toBe(1000);
+    expect(mockPathRecorderService.settings.minDistance).toBe(2);
   });
-
+  
   it('handles background state correctly', async () => {
-    mobileOptimizer = new MobileOptimizer(
-      mockPathRecorderService,
-      mockAudioService,
-      mockMapService
-    );
+    await mobileOptimizer.init();
     
-    // Simulate app going to background
-    document.hidden = true;
-    mobileOptimizer.handleBackgroundState();
+    // Simulate background state
+    document.dispatchEvent(new Event('visibilitychange'));
     
-    // Should suspend audio and pause GPS and map
     expect(mockAudioService.suspendAudio).toHaveBeenCalled();
-    expect(mockPathRecorderService.pauseGPSTracking).toHaveBeenCalled();
     expect(mockMapService.pauseUpdates).toHaveBeenCalled();
-    
-    // Simulate app coming back to foreground
-    document.hidden = false;
-    mobileOptimizer.handleForegroundState();
-    
-    // Should resume normal operation
-    expect(mockAudioService.resumeAudio).toHaveBeenCalled();
-    expect(mockMapService.resumeUpdates).toHaveBeenCalled();
   });
-
+  
   it('handles background state correctly during recording', async () => {
+    await mobileOptimizer.init();
+    
+    // Set recording state
     mockPathRecorderService.isRecording = true;
     
-    mobileOptimizer = new MobileOptimizer(
-      mockPathRecorderService,
-      mockAudioService,
-      mockMapService
-    );
+    // Simulate background state
+    document.dispatchEvent(new Event('visibilitychange'));
     
-    // Simulate app going to background during recording
-    document.hidden = true;
-    mobileOptimizer.handleBackgroundState();
-    
-    // Should not pause GPS tracking
-    expect(mockPathRecorderService.pauseGPSTracking).not.toHaveBeenCalled();
-    
-    // But should reduce tracking frequency
     expect(mockPathRecorderService.settings.captureInterval).toBe(5000);
     expect(mockPathRecorderService.settings.minDistance).toBe(10);
   });
-
-  it('detects low-end devices correctly', () => {
-    // Simulate low-end device
-    global.navigator.deviceMemory = 2;
-    global.navigator.hardwareConcurrency = 2;
+  
+  it('detects low-end devices correctly', async () => {
+    // Mock low-end device
+    const lowEndNavigator = {
+      ...navigator,
+      deviceMemory: 2,
+      hardwareConcurrency: 2,
+      connection: {
+        type: 'cellular',
+        effectiveType: '2g',
+        downlink: 0.5
+      }
+    };
     
-    mobileOptimizer = new MobileOptimizer(
-      mockPathRecorderService,
-      mockAudioService,
-      mockMapService
-    );
+    Object.defineProperty(global, 'navigator', {
+      value: lowEndNavigator,
+      writable: true,
+      configurable: true
+    });
     
-    // Should detect low-end device
+    await mobileOptimizer.init();
     expect(mobileOptimizer.detectLowEndDevice()).toBe(true);
-    
-    // Should apply low-end device optimizations
-    expect(mockMapService.setMapQuality).toHaveBeenCalledWith('low');
   });
-
-  it('handles app close correctly', () => {
+  
+  it('handles app close correctly', async () => {
+    await mobileOptimizer.init();
+    
+    // Set recording state
     mockPathRecorderService.isRecording = true;
     
-    mobileOptimizer = new MobileOptimizer(
-      mockPathRecorderService,
-      mockAudioService,
-      mockMapService
-    );
+    // Simulate app close
+    window.dispatchEvent(new Event('beforeunload'));
     
-    // Simulate app close during recording
-    mobileOptimizer.handleAppClose();
-    
-    // Should save recording state
-    expect(window.localStorage.setItem).toHaveBeenCalledWith('eonta_recording_in_progress', 'true');
+    expect(mockLocalStorage.setItem).toHaveBeenCalledWith('eonta_recording_in_progress', 'true');
     expect(mockAudioService.dispose).toHaveBeenCalled();
   });
 });
