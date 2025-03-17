@@ -1,20 +1,23 @@
 const express = require('express');
 const router = express.Router();
 const multer = require('multer');
-const AWS = require('aws-sdk');
 const path = require('path');
 const jwt = require('jsonwebtoken');
 const AudioConverter = require('../server/services/AudioConverter');
 const audioConfig = require('../server/config/audio');
 
-// Configure AWS S3
-AWS.config.update({
-  accessKeyId: process.env.AWS_ACCESS_KEY_ID,
-  secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
-  region: process.env.AWS_REGION
-});
+// AWS SDK v3 imports
+const { S3Client, PutObjectCommand, GetObjectCommand } = require('@aws-sdk/client-s3');
+const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
 
-const s3 = new AWS.S3();
+// Configure AWS S3 Client
+const s3Client = new S3Client({
+  region: process.env.AWS_REGION,
+  credentials: {
+    accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY
+  }
+});
 
 // Configure Multer for file upload
 const storage = multer.memoryStorage();
@@ -88,7 +91,7 @@ router.post('/upload', auth, upload.single('audio'), async (req, res) => {
     const uniqueFileName = `${Date.now()}-${path.basename(fileName)}`;
     
     // Set up S3 upload parameters
-    const params = {
+    const uploadParams = {
       Bucket: process.env.S3_BUCKET_NAME,
       Key: uniqueFileName,
       Body: fileBuffer,
@@ -97,15 +100,19 @@ router.post('/upload', auth, upload.single('audio'), async (req, res) => {
       CacheControl: `max-age=${audioConfig.caching.maxAge}` // Cache based on config
     };
 
-    // Upload to S3
-    const uploadResult = await s3.upload(params).promise();
+    // Upload to S3 using the PutObjectCommand
+    const command = new PutObjectCommand(uploadParams);
+    await s3Client.send(command);
+    
+    // Generate the URL for the uploaded file
+    const fileUrl = `https://${process.env.S3_BUCKET_NAME}.s3.${process.env.AWS_REGION}.amazonaws.com/${uniqueFileName}`;
     
     res.status(200).json({
       success: true,
       file: {
         name: uniqueFileName,
         originalName: fileName,
-        url: uploadResult.Location,
+        url: fileUrl,
         size: fileBuffer.length,
         type: fileMimetype,
         converted: wasConverted
@@ -125,15 +132,14 @@ router.get('/:fileName', auth, async (req, res) => {
   try {
     const { fileName } = req.params;
     
-    // Set up S3 params for generating a signed URL
-    const params = {
+    // Set up the GetObjectCommand for generating a signed URL
+    const command = new GetObjectCommand({
       Bucket: process.env.S3_BUCKET_NAME,
-      Key: fileName,
-      Expires: 3600 // URL expiration time in seconds (1 hour)
-    };
+      Key: fileName
+    });
 
-    // Generate a signed URL for the file
-    const signedUrl = await s3.getSignedUrlPromise('getObject', params);
+    // Generate a signed URL that expires in 1 hour (3600 seconds)
+    const signedUrl = await getSignedUrl(s3Client, command, { expiresIn: 3600 });
     
     res.status(200).json({
       success: true,
