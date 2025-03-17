@@ -1,0 +1,476 @@
+// client/src/services/MapService.js
+
+/**
+ * Map Service for EONTA
+ * Provides an interface to the Google Maps API with performance optimization features
+ */
+class MapService {
+  constructor() {
+    this.map = null;
+    this.markers = new Map();
+    this.polygons = new Map();
+    this.paths = new Map();
+    this.refreshRate = 1000; // Default refresh rate in ms
+    this.updateInterval = null;
+    this.currentQuality = 'high';
+    this.isUpdating = false;
+    this.lastUserPosition = null;
+    this.userMarker = null;
+  }
+
+  /**
+   * Initialize the map
+   * @param {HTMLElement} container - Map container element
+   * @param {Object} options - Map initialization options
+   * @returns {google.maps.Map} The initialized map instance
+   */
+  initMap(container, options = {}) {
+    if (!container) {
+      console.error('No container element provided for map initialization');
+      return null;
+    }
+
+    // Default options
+    const defaultOptions = {
+      center: { lat: 40.730610, lng: -73.935242 }, // New York City
+      zoom: 13,
+      mapTypeId: google.maps.MapTypeId.ROADMAP,
+      mapTypeControl: true,
+      mapTypeControlOptions: {
+        style: google.maps.MapTypeControlStyle.HORIZONTAL_BAR,
+        position: google.maps.ControlPosition.TOP_RIGHT
+      },
+      zoomControl: true,
+      zoomControlOptions: {
+        position: google.maps.ControlPosition.RIGHT_CENTER
+      },
+      scaleControl: true,
+      streetViewControl: true,
+      streetViewControlOptions: {
+        position: google.maps.ControlPosition.RIGHT_BOTTOM
+      },
+      fullscreenControl: true,
+      // Optimize performance for mobile
+      gestureHandling: 'greedy',
+      tilt: 0 // Disable 3D buildings for better performance
+    };
+
+    // Merge default options with provided options
+    const mergedOptions = { ...defaultOptions, ...options };
+
+    try {
+      // Create the map
+      this.map = new google.maps.Map(container, mergedOptions);
+      
+      // Set up event listeners
+      this.setupEventListeners();
+      
+      console.log('Map initialized successfully');
+      
+      return this.map;
+    } catch (error) {
+      console.error('Error initializing map:', error);
+      return null;
+    }
+  }
+
+  /**
+   * Set up map event listeners
+   */
+  setupEventListeners() {
+    if (!this.map) return;
+    
+    // Listen for map idle event (map has finished rendering)
+    this.map.addListener('idle', () => {
+      if (this.onMapIdle) this.onMapIdle();
+    });
+    
+    // Listen for bounds changed to track viewport
+    this.map.addListener('bounds_changed', () => {
+      // Track when the map bounds change
+      if (this.onBoundsChanged) this.onBoundsChanged(this.map.getBounds());
+    });
+    
+    // Track clicks for debugging and development
+    this.map.addListener('click', (event) => {
+      const clickedPosition = {
+        lat: event.latLng.lat(),
+        lng: event.latLng.lng()
+      };
+      console.log('Map clicked at:', clickedPosition);
+      
+      if (this.onMapClick) this.onMapClick(clickedPosition);
+    });
+  }
+
+  /**
+   * Set the map refresh rate - how often to update visuals
+   * @param {Number} rate - Refresh rate in milliseconds
+   */
+  setRefreshRate(rate) {
+    if (!this.map) return;
+    
+    // Clear existing update interval if any
+    if (this.updateInterval) {
+      clearInterval(this.updateInterval);
+      this.updateInterval = null;
+    }
+    
+    // Set new update interval if rate is valid
+    if (rate > 0) {
+      this.refreshRate = rate;
+      console.log(`Map refresh rate set to ${rate}ms`);
+      
+      this.updateInterval = setInterval(() => {
+        this.refreshMap();
+      }, rate);
+    }
+  }
+  
+  /**
+   * Refresh the map and update positions
+   */
+  refreshMap() {
+    if (!this.map || this.isUpdating) return;
+    
+    this.isUpdating = true;
+    
+    try {
+      // Trigger a resize event to refresh the map
+      google.maps.event.trigger(this.map, 'resize');
+      
+      // Update marker positions if needed
+      this.updateVisibleMarkers();
+      
+      this.isUpdating = false;
+    } catch (error) {
+      console.error('Error refreshing map:', error);
+      this.isUpdating = false;
+    }
+  }
+  
+  /**
+   * Update only the markers that are visible in the current viewport
+   * Reduces CPU/GPU load by not rendering off-screen elements
+   */
+  updateVisibleMarkers() {
+    if (!this.map) return;
+    
+    try {
+      const bounds = this.map.getBounds();
+      if (!bounds) return;
+      
+      // Update visible markers
+      this.markers.forEach((marker, id) => {
+        const position = marker.getPosition();
+        if (position && bounds.contains(position)) {
+          // Marker is in viewport - ensure it's enabled
+          if (!marker.getVisible()) {
+            marker.setVisible(true);
+          }
+        } else {
+          // Marker is outside viewport - hide it for performance
+          if (marker.getVisible() && this.currentQuality !== 'high') {
+            marker.setVisible(false);
+          }
+        }
+      });
+      
+      // Similarly update polygons if we're in low quality mode
+      if (this.currentQuality === 'low') {
+        this.polygons.forEach((polygon, id) => {
+          let isVisible = false;
+          
+          // Check if any point of the polygon is in bounds
+          const path = polygon.getPath();
+          for (let i = 0; i < path.getLength(); i++) {
+            if (bounds.contains(path.getAt(i))) {
+              isVisible = true;
+              break;
+            }
+          }
+          
+          polygon.setVisible(isVisible);
+        });
+      } else {
+        // In medium/high quality, show all polygons
+        this.polygons.forEach(polygon => {
+          polygon.setVisible(true);
+        });
+      }
+    } catch (error) {
+      console.error('Error updating visible markers:', error);
+    }
+  }
+  
+  /**
+   * Pause map updates to save battery
+   */
+  pauseUpdates() {
+    console.log('Pausing map updates');
+    if (this.updateInterval) {
+      clearInterval(this.updateInterval);
+      this.updateInterval = null;
+    }
+  }
+  
+  /**
+   * Resume map updates
+   */
+  resumeUpdates() {
+    console.log('Resuming map updates');
+    if (!this.updateInterval && this.refreshRate > 0) {
+      this.updateInterval = setInterval(() => {
+        this.refreshMap();
+      }, this.refreshRate);
+    }
+  }
+  
+  /**
+   * Set map quality (high, medium, low)
+   * Adjusts visual features based on device capabilities
+   * @param {String} quality - Quality level: 'high', 'medium', or 'low'
+   */
+  setMapQuality(quality) {
+    if (!this.map) return;
+    
+    this.currentQuality = quality;
+    console.log(`Setting map quality to: ${quality}`);
+    
+    let mapStyles = [];
+    
+    // Apply different styles based on quality setting
+    switch(quality) {
+      case 'low':
+        // Simplified map with fewer features for low-end devices
+        mapStyles = [
+          { featureType: "poi", elementType: "labels", stylers: [{ visibility: "off" }] },
+          { featureType: "transit", elementType: "labels", stylers: [{ visibility: "off" }] },
+          { featureType: "road", elementType: "labels.icon", stylers: [{ visibility: "off" }] },
+          { featureType: "administrative", elementType: "labels", stylers: [{ visibility: "simplified" }] },
+          { featureType: "water", elementType: "geometry.fill", stylers: [{ lightness: 40 }] },
+          { featureType: "landscape", elementType: "geometry.fill", stylers: [{ lightness: 40 }] }
+        ];
+        
+        // Reduce map complexity
+        this.map.setOptions({
+          styles: mapStyles,
+          maxZoom: 18,
+          minZoom: 9,
+          tilt: 0
+        });
+        
+        // Also disable 3D buildings, satellite view and street view for better performance
+        this.map.setMapTypeId(google.maps.MapTypeId.ROADMAP);
+        break;
+        
+      case 'medium':
+        // Balanced map with moderate detail
+        mapStyles = [
+          { featureType: "poi", elementType: "labels", stylers: [{ visibility: "simplified" }] },
+          { featureType: "transit", elementType: "labels", stylers: [{ visibility: "simplified" }] }
+        ];
+        
+        this.map.setOptions({
+          styles: mapStyles,
+          maxZoom: 20,
+          minZoom: 5,
+          tilt: 0
+        });
+        break;
+        
+      case 'high':
+      default:
+        // Full detail map (default)
+        this.map.setOptions({
+          styles: [],
+          maxZoom: 22,
+          minZoom: 3,
+          tilt: 45 // Allow 3D buildings in high quality mode
+        });
+        break;
+    }
+    
+    // Update markers and polygons visibility
+    this.updateVisibleMarkers();
+  }
+  
+  /**
+   * Add a marker to the map
+   * @param {String} id - Unique identifier for the marker
+   * @param {Object} position - {lat, lng} coordinates
+   * @param {Object} options - Marker options
+   * @returns {google.maps.Marker} The created marker
+   */
+  addMarker(id, position, options = {}) {
+    if (!this.map || !id || !position) return null;
+    
+    try {
+      // Remove existing marker with same ID if it exists
+      if (this.markers.has(id)) {
+        this.removeMarker(id);
+      }
+      
+      // Create and add the marker
+      const marker = new google.maps.Marker({
+        position: position,
+        map: this.map,
+        ...options
+      });
+      
+      this.markers.set(id, marker);
+      return marker;
+    } catch (error) {
+      console.error(`Error adding marker ${id}:`, error);
+      return null;
+    }
+  }
+  
+  /**
+   * Remove a marker from the map
+   * @param {String} id - Marker identifier
+   * @returns {Boolean} Success status
+   */
+  removeMarker(id) {
+    if (!this.markers.has(id)) return false;
+    
+    try {
+      const marker = this.markers.get(id);
+      marker.setMap(null);
+      this.markers.delete(id);
+      return true;
+    } catch (error) {
+      console.error(`Error removing marker ${id}:`, error);
+      return false;
+    }
+  }
+  
+  /**
+   * Add a polygon to the map
+   * @param {String} id - Unique identifier for the polygon
+   * @param {Array} path - Array of {lat, lng} coordinates
+   * @param {Object} options - Polygon options
+   * @returns {google.maps.Polygon} The created polygon
+   */
+  addPolygon(id, path, options = {}) {
+    if (!this.map || !id || !path || !path.length) return null;
+    
+    try {
+      // Remove existing polygon with same ID if it exists
+      if (this.polygons.has(id)) {
+        this.removePolygon(id);
+      }
+      
+      // Create and add the polygon
+      const polygon = new google.maps.Polygon({
+        paths: path,
+        map: this.map,
+        ...options
+      });
+      
+      this.polygons.set(id, polygon);
+      return polygon;
+    } catch (error) {
+      console.error(`Error adding polygon ${id}:`, error);
+      return null;
+    }
+  }
+  
+  /**
+   * Remove a polygon from the map
+   * @param {String} id - Polygon identifier
+   * @returns {Boolean} Success status
+   */
+  removePolygon(id) {
+    if (!this.polygons.has(id)) return false;
+    
+    try {
+      const polygon = this.polygons.get(id);
+      polygon.setMap(null);
+      this.polygons.delete(id);
+      return true;
+    } catch (error) {
+      console.error(`Error removing polygon ${id}:`, error);
+      return false;
+    }
+  }
+  
+  /**
+   * Update user location on the map
+   * @param {Object} position - {lat, lng} coordinates
+   */
+  updateUserLocation(position) {
+    if (!this.map || !position) return;
+    
+    try {
+      this.lastUserPosition = position;
+      
+      // Create marker if it doesn't exist yet
+      if (!this.userMarker) {
+        this.userMarker = new google.maps.Marker({
+          position: position,
+          map: this.map,
+          icon: {
+            path: google.maps.SymbolPath.CIRCLE,
+            scale: 8,
+            fillColor: '#4A90E2',
+            fillOpacity: 0.8,
+            strokeColor: '#FFFFFF',
+            strokeWeight: 2
+          },
+          title: 'Your Location',
+          zIndex: 1000
+        });
+      } else {
+        // Update existing marker position
+        this.userMarker.setPosition(position);
+      }
+      
+      // Center map on user if requested
+      if (this.shouldCenterOnUser) {
+        this.map.panTo(position);
+      }
+    } catch (error) {
+      console.error('Error updating user location:', error);
+    }
+  }
+  
+  /**
+   * Clean up resources
+   */
+  dispose() {
+    // Clear update interval
+    if (this.updateInterval) {
+      clearInterval(this.updateInterval);
+      this.updateInterval = null;
+    }
+    
+    // Remove all markers
+    this.markers.forEach(marker => {
+      marker.setMap(null);
+    });
+    this.markers.clear();
+    
+    // Remove all polygons
+    this.polygons.forEach(polygon => {
+      polygon.setMap(null);
+    });
+    this.polygons.clear();
+    
+    // Remove paths
+    this.paths.forEach(path => {
+      path.setMap(null);
+    });
+    this.paths.clear();
+    
+    // Remove user marker
+    if (this.userMarker) {
+      this.userMarker.setMap(null);
+      this.userMarker = null;
+    }
+    
+    console.log('Map resources disposed');
+  }
+}
+
+export default MapService;

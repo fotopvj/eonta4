@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>EONTA - Offline</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 100vh;
+      margin: 0;
+      padding: 20px;
+      text-align: center;
+      background-color: #f8f9fa;
+      color: #333;
+    }
+    h1 {
+      color: #4A90E2;
+    }
+    .logo {
+      max-width: 200px;
+      margin-bottom: 20px;
+    }
+    .card {
+      background: white;
+      border-radius: 8px;
+      padding: 20px;
+      box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+      max-width: 400px;
+      width: 100%;
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <img src="/assets/img/logo.svg" alt="EONTA Logo" class="logo">
+    <h1>You're Offline</h1>
+    <p>EONTA needs an internet connection to function properly. Please check your connection and try again.</p>
+    <p>Previously visited compositions may be available offline.</p>
+    <button onclick="window.location.reload()">Try Again</button>
+  </div>
+</body>
+</html>
