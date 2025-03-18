@@ -1,22 +1,31 @@
 import React, { useState } from 'react';
-import { makeStyles } from '@material-ui/core/styles';
+import { styled } from '@mui/material/styles';
 import {
   Paper,
   IconButton,
   Slider,
   Typography,
   Tooltip,
-} from '@material-ui/core';
+} from '@mui/material';
 import {
   PlayArrow as PlayIcon,
   Pause as PauseIcon,
   VolumeUp as VolumeIcon,
   VolumeOff as MuteIcon,
   Tune as EffectsIcon,
-} from '@material-ui/icons';
+} from '@mui/icons-material';
 
-const useStyles = makeStyles((theme) => ({
-  root: {
+const PREFIX = 'AudioControls';
+
+const classes = {
+  root: `${PREFIX}-root`,
+  volumeControl: `${PREFIX}-volumeControl`,
+  slider: `${PREFIX}-slider`,
+  effectsButton: `${PREFIX}-effectsButton`,
+};
+
+const Root = styled(Paper)(({ theme }) => ({
+  [`&.${classes.root}`]: {
     position: 'absolute',
     bottom: 20,
     left: '50%',
@@ -28,22 +37,21 @@ const useStyles = makeStyles((theme) => ({
     gap: theme.spacing(2),
     minWidth: 300,
   },
-  volumeControl: {
+  [`& .${classes.volumeControl}`]: {
     display: 'flex',
     alignItems: 'center',
     width: 200,
   },
-  slider: {
+  [`& .${classes.slider}`]: {
     marginLeft: theme.spacing(2),
     marginRight: theme.spacing(2),
   },
-  effectsButton: {
+  [`& .${classes.effectsButton}`]: {
     marginLeft: 'auto',
   },
 }));
 
 function AudioControls({ audioService, pathRecorder }) {
-  const classes = useStyles();
   const [isPlaying, setIsPlaying] = useState(false);
   const [volume, setVolume] = useState(100);
   const [isMuted, setIsMuted] = useState(false);
@@ -87,7 +95,7 @@ function AudioControls({ audioService, pathRecorder }) {
   };
 
   return (
-    <Paper className={classes.root} elevation={3}>
+    <Root className={classes.root} elevation={3}>
       <IconButton
         color={isPlaying ? "secondary" : "primary"}
         onClick={handlePlayPause}
@@ -121,7 +129,7 @@ function AudioControls({ audioService, pathRecorder }) {
           <EffectsIcon />
         </IconButton>
       </Tooltip>
-    </Paper>
+    </Root>
   );
 }
 

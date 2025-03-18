@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { makeStyles } from '@material-ui/core/styles';
+import { styled } from '@mui/material/styles';
 import {
   Paper,
   Typography,
@@ -10,16 +10,26 @@ import {
   MenuItem,
   Switch,
   FormControlLabel,
-} from '@material-ui/core';
+} from '@mui/material';
 import {
   FiberManualRecord as RecordIcon,
   Stop as StopIcon,
   Battery20 as BatteryIcon,
   Speed as SpeedIcon,
-} from '@material-ui/icons';
+} from '@mui/icons-material';
 
-const useStyles = makeStyles((theme) => ({
-  root: {
+const PREFIX = 'MapControls';
+
+const classes = {
+  root: `${PREFIX}-root`,
+  formControl: `${PREFIX}-formControl`,
+  button: `${PREFIX}-button`,
+  batteryWarning: `${PREFIX}-batteryWarning`,
+  performanceMode: `${PREFIX}-performanceMode`,
+};
+
+const Root = styled(Paper)(({ theme }) => ({
+  [`&.${classes.root}`]: {
     position: 'absolute',
     top: 20,
     left: 20,
@@ -27,14 +37,14 @@ const useStyles = makeStyles((theme) => ({
     padding: theme.spacing(2),
     minWidth: 250,
   },
-  formControl: {
+  [`& .${classes.formControl}`]: {
     marginTop: theme.spacing(2),
     minWidth: 200,
   },
-  button: {
+  [`& .${classes.button}`]: {
     marginTop: theme.spacing(2),
   },
-  batteryWarning: {
+  [`& .${classes.batteryWarning}`]: {
     color: theme.palette.error.main,
     display: 'flex',
     alignItems: 'center',
@@ -43,7 +53,7 @@ const useStyles = makeStyles((theme) => ({
       marginRight: theme.spacing(1),
     },
   },
-  performanceMode: {
+  [`& .${classes.performanceMode}`]: {
     display: 'flex',
     alignItems: 'center',
     marginTop: theme.spacing(1),
@@ -54,7 +64,6 @@ const useStyles = makeStyles((theme) => ({
 }));
 
 function MapControls({ mapService, pathRecorder, mobileOptimizer }) {
-  const classes = useStyles();
   const [isRecording, setIsRecording] = useState(false);
   const [mapQuality, setMapQuality] = useState('high');
   const [performanceMode, setPerformanceMode] = useState(false);
@@ -87,7 +96,7 @@ function MapControls({ mapService, pathRecorder, mobileOptimizer }) {
   };
 
   return (
-    <Paper className={classes.root} elevation={3}>
+    <Root className={classes.root} elevation={3}>
       <Typography variant="h6" gutterBottom>
         Map Controls
       </Typography>
@@ -142,7 +151,7 @@ function MapControls({ mapService, pathRecorder, mobileOptimizer }) {
           Performance Mode Active
         </Typography>
       )}
-    </Paper>
+    </Root>
   );
 }
 

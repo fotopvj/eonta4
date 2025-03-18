@@ -15,7 +15,7 @@ const audioRoutes = require('../routes/audio');
 const app = express();
 
 // Set port
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 3001;
 
 // Middleware
 app.use(cors({

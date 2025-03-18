@@ -65,15 +65,20 @@ class PathRecorderService {
     this.recordingStartTime = Date.now();
     
     // Create initial path point on the map
-    if (this.mapService && this.mapService.map && typeof google !== 'undefined' && google.maps) {
+    if (this.mapService && this.mapService.isGoogleMapsLoaded()) {
       try {
-        this.pathPolyline = new google.maps.Polyline({
+        const googleMaps = this.mapService.getGoogleMaps();
+        if (!googleMaps) {
+          throw new Error('Google Maps not loaded');
+        }
+
+        this.pathPolyline = new googleMaps.maps.Polyline({
           path: [],
           geodesic: true,
           strokeColor: '#FF0000',
           strokeOpacity: 1.0,
           strokeWeight: 3,
-          map: this.mapService.map
+          map: this.mapService.getMap()
         });
       } catch (error) {
         console.error('Error creating map polyline:', error);
